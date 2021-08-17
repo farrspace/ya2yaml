@@ -5,6 +5,8 @@
 # License::   MIT License
 
 class Ya2YAML
+  DOUBLEQUOTE = '"'
+  NEWLINE = "\n"
 
   def initialize(opts = {})
     options = opts.dup
@@ -63,7 +65,7 @@ class Ya2YAML
             key = emit(k, level + 1)
             if (
               is_one_plain_line?(key) ||
-              key =~ /\A(#{REX_BOOL}|#{REX_FLOAT}|#{REX_INT}|#{REX_NULL})\z/x
+              key =~ EMIT_KEY_REGEX
             )
               indent + key + ': ' + emit(obj[k], level + 1)
             else
@@ -164,19 +166,19 @@ class Ya2YAML
   def emit_quoted_string(str, level)
     str = yaml_escape(normalize_line_break(str))
     if (str.length < @options[:minimum_block_length])
-      str.gsub!(/#{REX_NORMAL_LB}/) { ESCAPE_SEQ_LB[$1] }
+      str.gsub!(EMIT_QUOTED_STRING_REGEX_1) { ESCAPE_SEQ_LB[$1] }
     else
-      str.gsub!(/#{REX_NORMAL_LB}$/) { ESCAPE_SEQ_LB[$1] }
-      str.gsub!(/(#{REX_NORMAL_LB}+)(.)/) {
+      str.gsub!(EMIT_QUOTED_STRING_REGEX_2) { ESCAPE_SEQ_LB[$1] }
+      str.gsub!(EMIT_QUOTED_STRING_REGEX_3) {
         trail_c = $3
-        $1 + trail_c.sub(/([\t ])/) { ESCAPE_SEQ_WS[$1] }
+        $1 + trail_c.sub(EMIT_QUOTED_STRING_REGEX_4) { ESCAPE_SEQ_WS[$1] }
       }
       indent = s_indent(level)
-      str.gsub!(/#{REX_NORMAL_LB}/) {
+      str.gsub!(EMIT_QUOTED_STRING_REGEX_1) {
         ESCAPE_SEQ_LB[$1] + "\\\n" + indent
       }
     end
-    '"' + str + '"'
+    DOUBLEQUOTE + str + DOUBLEQUOTE
   end
 
   def emit_base64_binary(str, level)
@@ -195,7 +197,7 @@ class Ya2YAML
     )
     if (
       @options[:printable_with_syck] &&
-      str =~ /\A#{REX_ANY_LB}* | #{REX_ANY_LB}*\z|#{REX_ANY_LB}{2}\z/
+      str =~ STRING_TYPE_REGEX
     )
       # detour Syck bug
       return true, false, nil, false
@@ -209,7 +211,10 @@ class Ya2YAML
   def is_printable?(ucs_code)
     # YAML 1.1 / 4.1.1.
     (
-      [0x09, 0x0a, 0x0d, 0x85].include?(ucs_code)   ||
+      ucs_code == 0x09 ||
+      ucs_code == 0x0a ||
+      ucs_code == 0x0d ||
+      ucs_code == 0x85 ||
       (ucs_code <=     0x7e && ucs_code >=    0x20) ||
       (ucs_code <=   0xd7ff && ucs_code >=    0xa0) ||
       (ucs_code <=   0xfffd && ucs_code >=  0xe000) ||
@@ -223,16 +228,15 @@ class Ya2YAML
   end
 
   def is_one_line?(str)
-    str !~ /#{REX_ANY_LB}(?!\z)/
+    str !~ ONE_LINE_REGEX
   end
 
   def is_one_plain_line?(str)
     # YAML 1.1 / 4.6.11.
-    str !~ /^([\-\?:,\[\]\{\}\#&\*!\|>'"%@`\s]|---|\.\.\.)/    &&
-    str !~ /[:\#\s\[\]\{\},]/                                  &&
-    str !~ /#{REX_ANY_LB}/                                     &&
-    str !~ /^(#{REX_BOOL}|#{REX_FLOAT}|#{REX_INT}|#{REX_MERGE}
-      |#{REX_NULL}|#{REX_TIMESTAMP}|#{REX_VALUE})$/x
+    str !~ PLAIN_LINE_REGEX_1 &&
+    str !~ PLAIN_LINE_REGEX_2 &&
+    str !~ PLAIN_LINE_REGEX_3 &&
+    str !~ PLAIN_LINE_REGEX_4
   end
 
   def s_indent(level)
@@ -242,7 +246,7 @@ class Ya2YAML
 
   def normalize_line_break(str)
     # YAML 1.1 / 4.1.4.
-    str.gsub(/(#{REX_CRLF}|#{REX_CR}|#{REX_NEL})/, "\n")
+    str.gsub(NORMALIZE_LINE_BREAK_REGEX, NEWLINE)
   end
 
   def yaml_escape(str)
@@ -360,6 +364,25 @@ class Ya2YAML
     REX_VALUE = /
       =
     /x
+
+    # constantizede regular expressions for methods
+    EMIT_QUOTED_STRING_REGEX_1 = /#{REX_NORMAL_LB}/
+    EMIT_QUOTED_STRING_REGEX_2 = /#{REX_NORMAL_LB}$/
+    EMIT_QUOTED_STRING_REGEX_3 = /(#{REX_NORMAL_LB}+)(.)/
+    EMIT_QUOTED_STRING_REGEX_4 = /([\t ])/
+
+    STRING_TYPE_REGEX = /\A#{REX_ANY_LB}* | #{REX_ANY_LB}*\z|#{REX_ANY_LB}{2}\z/
+
+    ONE_LINE_REGEX = /#{REX_ANY_LB}(?!\z)/
+
+    PLAIN_LINE_REGEX_1 = /^([\-\?:,\[\]\{\}\#&\*!\|>'"%@`\s]|---|\.\.\.)/
+    PLAIN_LINE_REGEX_2 = /[:\#\s\[\]\{\},]/
+    PLAIN_LINE_REGEX_3 = /#{REX_ANY_LB}/
+    PLAIN_LINE_REGEX_4 = /^(#{REX_BOOL}|#{REX_FLOAT}|#{REX_INT}|#{REX_MERGE}|#{REX_NULL}|#{REX_TIMESTAMP}|#{REX_VALUE})$/x
+
+    NORMALIZE_LINE_BREAK_REGEX = /(#{REX_CRLF}|#{REX_CR}|#{REX_NEL})/
+
+    EMIT_KEY_REGEX = /\A(#{REX_BOOL}|#{REX_FLOAT}|#{REX_INT}|#{REX_NULL})\z/x
   end
 
   include Constants
